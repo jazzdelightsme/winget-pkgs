@@ -227,9 +227,16 @@ $script:SettingsPath = Join-Path $(if ([System.Environment]::OSVersion.Platform 
 if (!(Test-Path $script:SettingsPath)) { New-Item -ItemType 'Directory' -Force -Path $script:SettingsPath | Out-Null }
 # Check for settings file and create it if none exists
 $script:SettingsPath = $(Join-Path $script:SettingsPath -ChildPath 'Settings.yaml')
-if (!(Test-Path $script:SettingsPath)) { '# See https://github.com/microsoft/winget-pkgs/tree/master/doc/tools/YamlCreate.md for a list of available settings' > $script:SettingsPath }
-# Load settings from file
-$ScriptSettings = ConvertFrom-Yaml -Yaml ($(Get-Content -Path $script:SettingsPath -Encoding UTF8) -join "`n")
+if ((Test-Path $script:SettingsPath)) {
+  $ScriptSettings = ConvertFrom-Yaml -Yaml (Get-Content -Path $script:SettingsPath -Encoding UTF8 -Raw)
+} else {
+  $defaultYamlPath = Join-Path $PSScriptRoot 'DefaultYamlCreateScriptSettings.yaml'
+  $ScriptSettings = ConvertFrom-Yaml -Yaml (Get-Content -Path $defaultYamlPath -Encoding UTF8 -Raw)
+  if ($Settings) {
+    Copy-Item $defaultYamlPath $script:SettingsPath
+  }
+}
+
 
 if ($Settings) {
   Invoke-Item -Path $script:SettingsPath
@@ -237,9 +244,10 @@ if ($Settings) {
 }
 
 if (!$ScriptSettings) {
-    $ScriptSettings = [PSCustomObject] @{ }
+  $ScriptSettings = [PSCustomObject] @{ }
 }
 
+# Checks if the InputObject has the specified property.
 function Test-Property {
   param
   (
@@ -252,6 +260,7 @@ function Test-Property {
   return [bool] ($InputObject.PSObject.Properties[ $PropertyName ])
 }
 
+# Makes sure that the InputObject has the specified property.
 function EnsureDefaultProperty {
   param
   (
