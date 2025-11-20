@@ -236,6 +236,50 @@ if ($Settings) {
   exit
 }
 
+if (!$ScriptSettings) {
+    $ScriptSettings = [PSCustomObject] @{ }
+}
+
+function Test-Property {
+  param
+  (
+    [Parameter(Mandatory = $true, Position = 0)]
+    $InputObject,
+    [Parameter(Mandatory = $true, Position = 1)]
+    [string] $PropertyName
+  )
+
+  return [bool] ($InputObject.PSObject.Properties[ $PropertyName ])
+}
+
+function EnsureDefaultProperty {
+  param
+  (
+    [Parameter(Mandatory = $true, Position = 0)]
+    $InputObject,
+    [Parameter(Mandatory = $true, Position = 1)]
+    [string] $PropertyName,
+    [Parameter(Mandatory = $false, Position = 2)]
+    $DefaultPropertyValue
+  )
+
+  if (!(Test-Property $InputObject $PropertyName)) {
+      Add-Member -InputObject $InputObject -MemberType NoteProperty -Name $PropertyName -Value -$DefaultPropertyValue
+  }
+}
+
+EnsureDefaultProperty $ScriptSettings EnableDeveloperOptions $false
+EnsureDefaultProperty $ScriptSettings OverrideManifestVersion ''
+EnsureDefaultProperty $ScriptSettings UseRedirectedURL 'ask'
+EnsureDefaultProperty $ScriptSettings SaveToTemporaryFolder 'ask'
+EnsureDefaultProperty $ScriptSettings DefaultInstallerLocale ''
+EnsureDefaultProperty $ScriptSettings SignedCLA $false
+EnsureDefaultProperty $ScriptSettings SuppressQuickUpdateWarning $false
+EnsureDefaultProperty $ScriptSettings AutoSubmitPRs 'ask'
+EnsureDefaultProperty $ScriptSettings ContinueWithExistingPRs 'ask'
+EnsureDefaultProperty $ScriptSettings TestManifestsInSandbox 'ask'
+EnsureDefaultProperty $ScriptSettings ExplicitMenuOptions $false
+
 $ScriptHeader = '# Created with YamlCreate.ps1 v2.7.1'
 $ManifestVersion = '1.12.0'
 $PSDefaultParameterValues = @{ '*:Encoding' = 'UTF8' }
@@ -258,7 +302,7 @@ $env:PSModulePath = $env:PSModulePath + ';' + (Join-Path -Path $PSScriptRoot -Ch
 
 Import-Module -Name 'YamlCreate' -Scope Global -Force -ErrorAction 'Stop' # Parent module that loads the rest of the modules required for the script
 
-$_wingetVersion = 1.0.0
+$_wingetVersion = '1.0.0'
 $_appInstallerVersion = (Get-AppxPackage Microsoft.DesktopAppInstaller).version
 if (Get-Command 'winget' -ErrorAction SilentlyContinue) { $_wingetVersion = (winget -v).TrimStart('v') }
 $script:backupUserAgent = "winget-cli WindowsPackageManager/$_wingetVersion DesktopAppInstaller/Microsoft.DesktopAppInstaller v$_appInstallerVersion"
