@@ -289,6 +289,25 @@ EnsureDefaultProperty $ScriptSettings ContinueWithExistingPRs 'ask'
 EnsureDefaultProperty $ScriptSettings TestManifestsInSandbox 'ask'
 EnsureDefaultProperty $ScriptSettings ExplicitMenuOptions $false
 
+# Retrieves the property on the object *if* it exists.
+# (So that we don't generate an error in strict mode, and also this communicates at the
+# callsite that the value might be null.)
+function Get-OptionalProperty {
+  param
+  (
+    [Parameter(Mandatory = $true, Position = 0)]
+    $InputObject,
+    [Parameter(Mandatory = $true, Position = 1)]
+    [string] $PropertyName
+  )
+
+  if (Test-Property $InputObject $PropertyName)
+  {
+    return $InputObject.$PropertyName
+  }
+}
+
+
 $ScriptHeader = '# Created with YamlCreate.ps1 v2.7.1'
 $ManifestVersion = '1.12.0'
 $PSDefaultParameterValues = @{ '*:Encoding' = 'UTF8' }
@@ -421,6 +440,7 @@ $Patterns = @{
   GenericUrlMaxLength           = $LocaleSchema.definitions.Url.maxLength
   AuthorMinLength               = $LocaleSchema.properties.Author.minLength
   AuthorMaxLength               = $LocaleSchema.properties.Author.maxLength
+  LicenseMinLength              = $LocaleSchema.properties.License.minLength
   LicenseMaxLength              = $LocaleSchema.properties.License.maxLength
   CopyrightMinLength            = $LocaleSchema.properties.Copyright.minLength
   CopyrightMaxLength            = $LocaleSchema.properties.Copyright.maxLength
@@ -977,7 +997,7 @@ Function Read-AppsAndFeaturesEntries {
 
   $_AppsAndFeaturesEntries = @()
   # TODO: Support adding AppsAndFeaturesEntries if they don't exist
-  if (!$_Installer.AppsAndFeaturesEntries) {
+  if (!(Test-Property $_Installer 'AppsAndFeaturesEntries')) {
     return
   }
 
@@ -1072,6 +1092,8 @@ Function Read-ARPDisplayVersion {
   return $_DisplayVersion
 }
 
+$script:Installers = @()
+
 # Prompts the user to enter installer values
 # Sets the $script:Installers value as an output
 # Returns void
@@ -1080,7 +1102,7 @@ Function Read-InstallerEntry {
   # Request user enter Installer URL
   $_Installer['InstallerUrl'] = Request-InstallerUrl
 
-  if ($_Installer.InstallerUrl -in ($script:Installers).InstallerUrl) {
+  if ($_Installer.InstallerUrl -in (Get-OptionalProperty $script:Installers InstallerUrl)) {
     $_MatchingInstaller = $script:Installers | Where-Object { $_.InstallerUrl -eq $_Installer.InstallerUrl } | Select-Object -First 1
     if ($_MatchingInstaller.InstallerSha256) { $_Installer['InstallerSha256'] = $_MatchingInstaller.InstallerSha256 }
     if ($_MatchingInstaller.InstallerType) { $_Installer['InstallerType'] = $_MatchingInstaller.InstallerType }
@@ -1099,7 +1121,7 @@ Function Read-InstallerEntry {
     if ($script:SaveOption -ne '2') {
       Write-Host
       $start_time = Get-Date
-      Write-Host $NewLine
+      Write-Host
       Write-Host 'Downloading URL. This will take a while...' -ForegroundColor Blue
       try {
         $script:dest = Get-InstallerFile -URI $_Installer['InstallerUrl'] -PackageIdentifier $PackageIdentifier -PackageVersion $PackageVersion
@@ -1115,6 +1137,7 @@ Function Read-InstallerEntry {
       if ($_) { $_Installer['Architecture'] = $_ | Select-Object -First 1 }
       Get-UriScope -URI $_Installer['InstallerUrl'] -OutVariable _ | Out-Null
       if ($_) { $_Installer['Scope'] = $_ | Select-Object -First 1 }
+      $ProductCode = ''
       if ([System.Environment]::OSVersion.Platform -match 'Win' -and ($script:dest).EndsWith('.msi')) {
         $ProductCode = [string](Get-MSIProperty -Path $script:dest -Property 'ProductCode').Value
       } elseif ([System.Environment]::OSVersion.Platform -match 'Unix' -and (Get-Item $script:dest).Name.EndsWith('.msi')) {
@@ -1390,11 +1413,6 @@ Function Read-InstallerEntry {
 
   if ($script:SaveOption -eq '1' -and (Test-Path -Path $script:dest)) { $script:CleanupPaths += $script:dest }
 
-  # If the installers array is empty, create it
-  if (!$script:Installers) {
-    $script:Installers = @()
-  }
-
   # Add the completed installer to the installers array
   $_Installer = Restore-YamlKeyOrder $_Installer $InstallerEntryProperties -NoComments
   $script:Installers += $_Installer
@@ -1612,17 +1630,22 @@ Function Restore-YamlKeyOrder {
   return $_Temp
 }
 
+$FileExtensions = ''
+$Protocols = ''
+$Commands = ''
+$InstallerSuccessCodes = ''
+$InstallModes = ''
+
 # Requests the user to input optional values for the Installer Manifest file
 Function Read-InstallerMetadata {
   Write-Host
 
   # Request File Extensions and validate
   do {
-    if (!$FileExtensions) { $FileExtensions = '' }
-    else { $FileExtensions = $FileExtensions | ToLower | UniqueItems }
+    $FileExtensions = $FileExtensions | ToLower | UniqueItems
     $script:FileExtensions = Read-InstallerMetadataValue -Variable $FileExtensions -Key 'FileExtensions' -Prompt "[Optional] Enter any File Extensions the application could support. For example: html, htm, url (Max $($Patterns.MaxItemsFileExtensions))" | ToLower | UniqueItems
 
-    if (($script:FileExtensions -split ',').Count -le $Patterns.MaxItemsFileExtensions -and $($script:FileExtensions.Split(',').Trim() | Where-Object { Test-String -Not $_ -MaxLength $Patterns.FileExtensionMaxLength -MatchPattern $Patterns.FileExtension -AllowNull }).Count -eq 0) {
+    if (($script:FileExtensions -split ',').Count -le $Patterns.MaxItemsFileExtensions -and @($script:FileExtensions.Split(',').Trim() | Where-Object { Test-String -Not $_ -MaxLength $Patterns.FileExtensionMaxLength -MatchPattern $Patterns.FileExtension -AllowNull }).Count -eq 0) {
       $script:_returnValue = [ReturnValue]::Success()
     } else {
       if (($script:FileExtensions -split ',').Count -gt $Patterns.MaxItemsFileExtensions ) {
@@ -1635,8 +1658,7 @@ Function Read-InstallerMetadata {
 
   # Request Protocols and validate
   do {
-    if (!$Protocols) { $Protocols = '' }
-    else { $Protocols = $Protocols | ToLower | UniqueItems }
+    $Protocols = $Protocols | ToLower | UniqueItems
     $script:Protocols = Read-InstallerMetadataValue -Variable $Protocols -Key 'Protocols' -Prompt "[Optional] Enter any Protocols the application provides a handler for. For example: http, https (Max $($Patterns.MaxItemsProtocols))" | ToLower | UniqueItems
     if (($script:Protocols -split ',').Count -le $Patterns.MaxItemsProtocols) {
       $script:_returnValue = [ReturnValue]::Success()
@@ -1647,8 +1669,7 @@ Function Read-InstallerMetadata {
 
   # Request Commands and validate
   do {
-    if (!$Commands) { $Commands = '' }
-    else { $Commands = $Commands | UniqueItems }
+    $Commands = $Commands | UniqueItems
     $script:Commands = Read-InstallerMetadataValue -Variable $Commands -Key 'Commands' -Prompt "[Optional] Enter any Commands or aliases to run the application. For example: msedge (Max $($Patterns.MaxItemsCommands))" | UniqueItems
     if (($script:Commands -split ',').Count -le $Patterns.MaxItemsCommands) {
       $script:_returnValue = [ReturnValue]::Success()
@@ -1659,7 +1680,6 @@ Function Read-InstallerMetadata {
 
   # Request Installer Success Codes and validate
   do {
-    if (!$InstallerSuccessCodes) { $InstallerSuccessCodes = '' }
     $script:InstallerSuccessCodes = Read-InstallerMetadataValue -Variable $InstallerSuccessCodes -Key 'InstallerSuccessCodes' -Prompt "[Optional] List of additional non-zero installer success exit codes other than known default values by winget (Max $($Patterns.MaxItemsSuccessCodes))" | UniqueItems
     if (($script:InstallerSuccessCodes -split ',').Count -le $Patterns.MaxItemsSuccessCodes) {
       $script:_returnValue = [ReturnValue]::Success()
@@ -1677,10 +1697,9 @@ Function Read-InstallerMetadata {
 
   # Request Install Modes and validate
   do {
-    if ($script:InstallModes) { $script:InstallModes = $script:InstallModes | UniqueItems }
     $script:InstallModes = Read-InstallerMetadataValue -Variable $script:InstallModes -Key 'InstallModes' -Prompt "[Optional] List of supported installer modes. Options: $($Patterns.ValidInstallModes -join ', ')"
     if ($script:InstallModes) { $script:InstallModes = $script:InstallModes | UniqueItems }
-    if ( (Test-String $script:InstallModes -IsNull) -or (($script:InstallModes -split ',').Count -le $Patterns.MaxItemsInstallModes -and $($script:InstallModes.Split(',').Trim() | Where-Object { $_ -CNotIn $Patterns.ValidInstallModes }).Count -eq 0)) {
+    if ( (Test-String $script:InstallModes -IsNull) -or (($script:InstallModes -split ',').Count -le $Patterns.MaxItemsInstallModes -and @($script:InstallModes.Split(',').Trim() | Where-Object { $_ -CNotIn $Patterns.ValidInstallModes }).Count -eq 0)) {
       $script:_returnValue = [ReturnValue]::Success()
     } else {
       if (($script:InstallModes -split ',').Count -gt $Patterns.MaxItemsInstallModes ) {
@@ -1691,6 +1710,23 @@ Function Read-InstallerMetadata {
     }
   }  until ($script:_returnValue.StatusCode -eq [ReturnValue]::Success().StatusCode)
 }
+
+$PackageLocale = ''
+$Publisher = ''
+$PackageName = ''
+$Moniker = ''
+$PublisherUrl = ''
+$PublisherSupportUrl = ''
+$PrivacyUrl = ''
+$Author = ''
+$PackageUrl = ''
+$License = ''
+$LicenseUrl = ''
+$Copyright = ''
+$CopyrightUrl = ''
+$Tags = ''
+$ShortDescription = ''
+$Description = ''
 
 # Requests the user to input values for the Locale Manifest file
 Function Read-LocaleMetadata {
@@ -1946,7 +1982,6 @@ Function Read-LocaleMetadata {
 
   # Request Tags and Validate
   do {
-    $script:Tags = [string]$script:Tags
     Write-Host -ForegroundColor 'Red' $script:_returnValue.ErrorString()
     Write-Host -ForegroundColor 'Yellow' -Object '[Optional] Enter any tags that would be useful to discover this tool.'
     Write-Host -ForegroundColor 'Blue' -Object 'Example: zip, c++, photos, OBS (Max', ($Patterns.TagsMaxItems), 'items)'
@@ -2322,6 +2357,9 @@ Function Write-VersionManifest {
   Write-ManifestContent -FilePath $VersionManifestPath -YamlContent $VersionManifest -Schema $SchemaUrls.version
 }
 
+$InstallerManifest = $null
+$MinimumOSVersion = ''
+
 # Take all the entered values and write the installer manifest file
 Function Write-InstallerManifest {
   # If the old manifests exist, copy it so it can be updated in place, otherwise, create a new empty manifest
@@ -2446,6 +2484,8 @@ Function Write-InstallerManifest {
   Write-ManifestContent -FilePath $InstallerManifestPath -YamlContent $InstallerManifest -Schema $SchemaUrls.installer
 }
 
+$LocaleManifest = $null
+
 # Take all the entered values and write the locale manifest file
 Function Write-LocaleManifest {
   # If the old manifests exist, copy it so it can be updated in place, otherwise, create a new empty manifest
@@ -2480,7 +2520,7 @@ Function Write-LocaleManifest {
   }
 
   If ($Tags) { Add-YamlListParameter -Object $LocaleManifest -Parameter 'Tags' -Values $Tags }
-  If (!$LocaleManifest.ManifestType) { $LocaleManifest['ManifestType'] = 'defaultLocale' }
+  If (!(Test-Property $LocaleManifest ManifestType)) { $LocaleManifest['ManifestType'] = 'defaultLocale' }
   If ($Moniker -and $($LocaleManifest.ManifestType -eq 'defaultLocale')) { Add-YamlParameter -Object $LocaleManifest -Parameter 'Moniker' -Value $Moniker }
   Add-YamlParameter -Object $LocaleManifest -Parameter 'ManifestVersion' -Value $ManifestVersion
 
@@ -2846,6 +2886,10 @@ if ($script:DestinationFolder -and $script:DestinationFolder.Count -gt 1) {
   $script:AppFolder = $script:DestinationFolder
 }
 
+$LastVersion = ''
+$OldManifests = @()
+$OldManifestType = ''
+
 # If the user selected `NewLocale` or `EditMetadata` the version *MUST* already exist in the folder structure
 if ($script:Option -in @('NewLocale'; 'EditMetadata'; 'RemoveManifest')) {
   # Try getting the old manifests from the specified folder
@@ -2905,7 +2949,8 @@ if (!$LastVersion) {
 }
 
 # If the old manifests exist, find the default locale
-if ($OldManifests.Name -match "$([Regex]::Escape($PackageIdentifier))\.locale\..*\.yaml") {
+$oldNames = @($OldManifests | Select-Object -ExpandProp Name)
+if ($oldNames -match "$([Regex]::Escape($PackageIdentifier))\.locale\..*\.yaml") {
   $_LocaleManifests = $OldManifests | Where-Object { $_.Name -match "$([Regex]::Escape($PackageIdentifier))\.locale\..*\.yaml" }
   foreach ($_Manifest in $_LocaleManifests) {
     $_ManifestContent = ConvertFrom-Yaml -Yaml ($(Get-Content -Path $($_Manifest.FullName) -Encoding UTF8) -join "`n") -Ordered
@@ -2915,7 +2960,7 @@ if ($OldManifests.Name -match "$([Regex]::Escape($PackageIdentifier))\.locale\..
 
 # If the old manifests exist, read their information into variables
 # Also ensure additional requirements are met for creating or updating files
-if ($OldManifests.Name -eq "$PackageIdentifier.installer.yaml" -and $OldManifests.Name -eq "$PackageIdentifier.locale.$PackageLocale.yaml" -and $OldManifests.Name -eq "$PackageIdentifier.yaml") {
+if ($oldNames -contains "$PackageIdentifier.installer.yaml" -and $oldNames -contains "$PackageIdentifier.locale.$PackageLocale.yaml" -and $oldNames -contains "$PackageIdentifier.yaml") {
   $script:OldManifestType = 'MultiManifest'
   $script:OldInstallerManifest = ConvertFrom-Yaml -Yaml ($(Get-Content -Path $(Resolve-Path "$AppFolder\..\$LastVersion\$PackageIdentifier.installer.yaml") -Encoding UTF8) -join "`n") -Ordered
   # Move Manifest Level Keys to installer Level
@@ -2948,27 +2993,27 @@ if ($OldManifests.Name -eq "$PackageIdentifier.installer.yaml" -and $OldManifest
   }
   $script:OldLocaleManifest = ConvertFrom-Yaml -Yaml ($(Get-Content -Path $(Resolve-Path "$AppFolder\..\$LastVersion\$PackageIdentifier.locale.$PackageLocale.yaml") -Encoding UTF8) -join "`n") -Ordered
   $script:OldVersionManifest = ConvertFrom-Yaml -Yaml ($(Get-Content -Path $(Resolve-Path "$AppFolder\..\$LastVersion\$PackageIdentifier.yaml") -Encoding UTF8) -join "`n") -Ordered
-} elseif ($OldManifests.Name -eq "$PackageIdentifier.yaml") {
+} elseif ($oldNames -eq "$PackageIdentifier.yaml") {
   if ($script:Option -eq 'NewLocale') { throw [ManifestException]::new('MultiManifest Required') }
   $script:OldManifestType = 'MultiManifest'
   $script:OldSingletonManifest = ConvertFrom-Yaml -Yaml ($(Get-Content -Path $(Resolve-Path "$AppFolder\..\$LastVersion\$PackageIdentifier.yaml") -Encoding UTF8) -join "`n") -Ordered
-  $PackageLocale = $script:OldSingletonManifest.PackageLocale
+  $PackageLocale = Get-OptionalProperty $script:OldSingletonManifest PackageLocale
   # Create new empty manifests
   $script:OldInstallerManifest = [ordered]@{}
   $script:OldLocaleManifest = [ordered]@{}
   $script:OldVersionManifest = [ordered]@{}
   # Parse version keys to version manifest
-  foreach ($_Key in $($OldSingletonManifest.Keys | Where-Object { $_ -in $VersionProperties })) {
+  foreach ($_Key in $((Get-OptionalProperty $OldSingletonManifest Keys) | Where-Object { $_ -in $VersionProperties })) {
     $script:OldVersionManifest[$_Key] = $script:OldSingletonManifest.$_Key
   }
   $script:OldVersionManifest['ManifestType'] = 'version'
   #Parse locale keys to locale manifest
-  foreach ($_Key in $($OldSingletonManifest.Keys | Where-Object { $_ -in $LocaleProperties })) {
+  foreach ($_Key in $((Get-OptionalProperty $OldSingletonManifest Keys) | Where-Object { $_ -in $LocaleProperties })) {
     $script:OldLocaleManifest[$_Key] = $script:OldSingletonManifest.$_Key
   }
   $script:OldLocaleManifest['ManifestType'] = 'defaultLocale'
   #Parse installer keys to installer manifest
-  foreach ($_Key in $($OldSingletonManifest.Keys | Where-Object { $_ -in $InstallerProperties })) {
+  foreach ($_Key in $((Get-OptionalProperty $OldSingletonManifest Keys) | Where-Object { $_ -in $InstallerProperties })) {
     $script:OldInstallerManifest[$_Key] = $script:OldSingletonManifest.$_Key
   }
   $script:OldInstallerManifest['ManifestType'] = 'installer'
@@ -3109,7 +3154,7 @@ Switch ($script:Option) {
     $script:OldVersionManifest['PackageVersion'] = $PackageVersion
 
     # Update the manifest with URLs that are already there
-    Write-Host $NewLine
+    Write-Host
     Write-Host 'Updating Manifest Information. This may take a while...' -ForegroundColor Blue
     $_NewInstallers = @();
     foreach ($_Installer in $script:OldInstallerManifest.Installers) {
