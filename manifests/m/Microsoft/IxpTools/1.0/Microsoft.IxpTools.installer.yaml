@@ -1,0 +1,28 @@
+# Created with YamlCreate.ps1 v2.5.0 $debug=NVS1.CRLF.7-5-4.Win32NT
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0.schema.json
+
+PackageIdentifier: Microsoft.IxpTools
+PackageVersion: "1.0"
+InstallerLocale: en-US
+InstallerType: exe
+Scope: user
+InstallModes:
+- interactive
+- silent
+- silentWithProgress
+InstallerSwitches:
+  # Helpful for figuring out how to escape double quotes:
+  #   https://stackoverflow.com/questions/6714165/powershell-stripping-double-quotes-from-command-line-arguments
+  Interactive:        "-NoProfile -ExecutionPolicy RemoteSigned -Command $env:PSModulePath = $null ; . { write-host 'I' ; $outerArgs = $args ; $bootstrapScript = (iwr https://aka.ms/install-ixptools/$env:_IXP_TEST_URL -EA Stop).Content ; $bytes = [System.Text.Encoding]::Unicode.GetBytes( $bootstrapScript ) ; $sig = Get-AuthenticodeSignature -Source 'BootstrapInstall.ps1' -Content $bytes ; if(($sig.Status -eq 'Valid') -or $env:_IXP_TEST_URL) { Invoke-Expression \\\". { $bootstrapScript } -I  @outerArgs\\\" } else { Write-Error \\\"Failed to validate signature: $($sig.Status)\\\" } ; $host.EnterNestedPrompt() ; read-host 'pausing...' }"
+  Silent:             "-NoProfile -ExecutionPolicy RemoteSigned -Command $env:PSModulePath = $null ; . { Write-Host 'S' ; $outerArgs = $args ; $bootstrapScript = (iwr https://aka.ms/install-ixptools/$env:_IXP_TEST_URL -EA Stop).Content ; $bytes = [System.Text.Encoding]::Unicode.GetBytes( $bootstrapScript ) ; $sig = Get-AuthenticodeSignature -Source 'BootstrapInstall.ps1' -Content $bytes ; if(($sig.Status -eq 'Valid') -or $env:_IXP_TEST_URL) { Invoke-Expression \\\". { $bootstrapScript } -S  @outerArgs\\\" } else { Write-Error \\\"Failed to validate signature: $($sig.Status)\\\" } ; $host.EnterNestedPrompt() ; read-host 'pausing...' }"
+  SilentWithProgress: "-NoProfile -ExecutionPolicy RemoteSigned -Command $env:PSModulePath = $null ; . { Write-Host 'P' ; $outerArgs = $args ; $bootstrapScript = (iwr https://aka.ms/install-ixptools/$env:_IXP_TEST_URL -EA Stop).Content ; $bytes = [System.Text.Encoding]::Unicode.GetBytes( $bootstrapScript ) ; $sig = Get-AuthenticodeSignature -Source 'BootstrapInstall.ps1' -Content $bytes ; if(($sig.Status -eq 'Valid') -or $env:_IXP_TEST_URL) { Invoke-Expression \\\". { $bootstrapScript } -SP @outerArgs\\\" } else { Write-Error \\\"Failed to validate signature: $($sig.Status)\\\" } ; $host.EnterNestedPrompt() ; read-host 'pausing...' }"
+UpgradeBehavior: install
+Commands:
+- ixptools-newvm
+ReleaseDate: 2025-11-29
+Installers:
+- Architecture: neutral
+  InstallerUrl: https://github.com/jazzdelightsme/PowershellStub/releases/download/v1.0/PowershellStub.exe
+  InstallerSha256: F0E3AAC6D5605D7507BE86D81F55092FC88D4AF53FC85AF9D4CFAF6DB7C876A4
+ManifestType: installer
+ManifestVersion: 1.10.0

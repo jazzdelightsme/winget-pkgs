@@ -1,0 +1,30 @@
+# Created with YamlCreate.ps1 v2.5.0 $debug=NVS1.CRLF.7-5-4.Win32NT
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
+
+PackageIdentifier: Microsoft.IxpTools
+PackageVersion: "1.0"
+PackageLocale: en-US
+Publisher: Microsoft
+# PublisherUrl:
+# PublisherSupportUrl:
+# PrivacyUrl:
+# Author:
+PackageName: IxpTools
+PackageUrl: https://aka.ms/ixptools
+License: Proprietary
+# LicenseUrl:
+Copyright: Copyright (c) Microsoft Corporation
+# CopyrightUrl:
+ShortDescription: Internal developer tool.
+# Description:
+Moniker: ixptools
+Tags:
+- ixptools
+- newvm
+# ReleaseNotes:
+# ReleaseNotesUrl:
+# PurchaseUrl:
+# InstallationNotes:
+# Documentations:
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0
